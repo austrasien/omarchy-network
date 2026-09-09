@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "austraz.network",
+  "name": "Network",
+  "version": "1.5.0",
+  "author": "austraz",
+  "description": "Wi-Fi panel: band pinning, MAC obfuscation, and a 20-minute traffic / ping / loss graph",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Network",
+    "description": "Wi-Fi panel: band pinning, MAC obfuscation, and a 20-minute traffic / ping / loss graph",
+    "category": "Network",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.network"
+  }
+}

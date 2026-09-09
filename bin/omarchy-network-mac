@@ -1,0 +1,200 @@
+#!/bin/bash
+
+# omarchy:summary=Show, randomise or restore the Wi-Fi MAC address
+# omarchy:group=network
+# omarchy:args=[random|permanent]
+# omarchy:examples=omarchy-network-mac | omarchy-network-mac random | omarchy-network-mac permanent
+
+set -euo pipefail
+
+# Same conventions as omarchy-network-band: LC_ALL=C so nmcli's translated
+# state words keep matching under a non-English session, and -e no so a ':'
+# inside a value is not escaped -- every value here is full of them.
+nm_get() {
+  LC_ALL=C nmcli -e no -g "$@" 2>/dev/null
+}
+
+wifi_device() {
+  nm_get DEVICE,TYPE,STATE device status |
+    awk -F: '$2 == "wifi" && $3 == "connected" { print $1; exit }'
+}
+
+wifi_profile() {
+  nm_get GENERAL.CONNECTION device show "$1"
+}
+
+# Profiles are addressed by UUID rather than name from here on: an SSID may
+# contain ':', which is also nmcli's field separator, and two saved networks
+# may share a name.
+wifi_profile_uuid() {
+  nm_get GENERAL.CON-UUID device show "$1"
+}
+
+wifi_profile_uuids() {
+  nm_get UUID,TYPE connection show | awk -F: '$2 == "802-11-wireless" { print $1 }'
+}
+
+# Only the profile in use may carry a virtual address; every other saved
+# network is pinned back to the hardware MAC. A profile left obfuscated would
+# hand that same address back weeks later, on a network it was never chosen
+# for, while the panel -- which can only read the connection in front of it --
+# showed the plain white "MAC" and said nothing.
+pin_permanent_except() {
+  local keep=${1:-} uuid
+
+  while read -r uuid; do
+    [[ -n $uuid && $uuid != "$keep" ]] || continue
+    [[ $(nm_get 802-11-wireless.cloned-mac-address connection show uuid "$uuid") == "permanent" ]] && continue
+    nmcli connection modify uuid "$uuid" 802-11-wireless.cloned-mac-address permanent >/dev/null 2>&1 || true
+  done < <(wifi_profile_uuids)
+}
+
+current_mac() {
+  local file=/sys/class/net/$1/address
+  [[ -r $file ]] || return 0
+  tr 'A-F' 'a-f' <"$file"
+}
+
+# ethtool reads the address burned into the adapter, which is the only way to
+# tell a cloned MAC from the real one: /sys reports whichever is in force, and
+# NetworkManager 1.58 has no GENERAL.PERMANENT-HW-ADDRESS field to ask for.
+permanent_mac() {
+  local mac=""
+
+  if omarchy-cmd-present ethtool; then
+    mac=$(ethtool -P "$1" 2>/dev/null | awk '{ print $NF }' | tr 'A-F' 'a-f')
+  fi
+
+  # Drivers that refuse to report it hand back all zeros. The hardware address
+  # is then unknowable, and "nothing is cloned" is the only honest answer --
+  # better than calling a real MAC virtual and offering to restore it.
+  if [[ -z $mac || $mac == "00:00:00:00:00:00" ]]; then
+    current_mac "$1"
+    return 0
+  fi
+
+  echo "$mac"
+}
+
+# Locally administered and unicast: bit 1 of the first octet marks the address
+# as not vendor-assigned, and bit 0 has to stay clear or it would be a
+# multicast address, which no AP will ever associate.
+random_mac() {
+  local -a bytes
+  mapfile -t bytes < <(od -An -tu1 -N6 /dev/urandom | tr -s ' ' '\n' | sed '/^$/d')
+
+  printf '%02x:%02x:%02x:%02x:%02x:%02x\n' \
+    "$(((bytes[0] & 0xfe) | 0x02))" \
+    "${bytes[1]}" "${bytes[2]}" "${bytes[3]}" "${bytes[4]}" "${bytes[5]}"
+}
+
+print_status() {
+  local device profile current permanent
+
+  device=$(wifi_device)
+  [[ -n $device ]] || return 0
+
+  current=$(current_mac "$device")
+  [[ -n $current ]] || return 0
+
+  permanent=$(permanent_mac "$device")
+  profile=$(wifi_profile "$device")
+
+  printf 'iface\t%s\n' "$device"
+  printf 'current\t%s\n' "$current"
+  printf 'permanent\t%s\n' "$permanent"
+
+  if [[ $current == "$permanent" ]]; then
+    printf 'virtual\tno\n'
+  else
+    printf 'virtual\tyes\n'
+  fi
+
+  if [[ -n $profile ]]; then printf 'profile\t%s\n' "$profile"; fi
+}
+
+# A virtual MAC is written to the active profile alone: spraying one across
+# every saved network would follow the machine onto networks it is not on right
+# now, and cost it any captive-portal session keyed to the old address. The
+# cleanup is deliberately wider than the change, so "obfuscated" can never be
+# true of a network the panel is not looking at.
+apply() {
+  local target=$1 label=$2
+  local device uuid previous current permanent
+
+  # Two changes in flight at once make NetworkManager supersede one activation
+  # with the other, and the loser's `nmcli up` then sits out its entire timeout
+  # before reporting a failure that never happened -- which would trigger the
+  # revert below and undo a change that actually worked. One at a time.
+  exec 9>"${XDG_RUNTIME_DIR:-/tmp}/omarchy-network-mac.lock"
+  if ! flock -n 9; then
+    echo "Error: another MAC change is still running." >&2
+    exit 1
+  fi
+
+  device=$(wifi_device)
+  if [[ -z $device ]]; then
+    echo "Error: no connected Wi-Fi device." >&2
+    exit 1
+  fi
+
+  uuid=$(wifi_profile_uuid "$device")
+  if [[ -z $uuid ]]; then
+    echo "Error: no active Wi-Fi connection profile." >&2
+    exit 1
+  fi
+
+  # Restoring an interface that already carries its hardware address has
+  # nothing to reassociate for, so the link is left alone. The stale pins on
+  # the other profiles still have to go: that is the whole point of the click.
+  current=$(current_mac "$device")
+  permanent=$(permanent_mac "$device")
+  if [[ $target == "permanent" && $current == "$permanent" ]]; then
+    pin_permanent_except ""
+    exit 0
+  fi
+
+  previous=$(nm_get 802-11-wireless.cloned-mac-address connection show uuid "$uuid")
+
+  nmcli connection modify uuid "$uuid" 802-11-wireless.cloned-mac-address "$target" >/dev/null
+  pin_permanent_except "$uuid"
+
+  # The address only changes on reassociation. Association itself takes about a
+  # second here, so 30s is already generous; nmcli's default 90 would leave the
+  # panel's button dead for a minute and a half on a network that is never
+  # coming up. If the radio cannot come back, put the profile back and
+  # reconnect rather than leaving the machine stranded offline.
+  if ! nmcli --wait 30 connection up uuid "$uuid" >/dev/null 2>&1; then
+    nmcli connection modify uuid "$uuid" 802-11-wireless.cloned-mac-address "$previous" >/dev/null
+    nmcli --wait 30 connection up uuid "$uuid" >/dev/null 2>&1 || true
+    echo "Error: could not associate with the $label MAC; reverted." >&2
+    exit 1
+  fi
+}
+
+usage() {
+  echo "Usage: omarchy-network-mac [random|permanent]" >&2
+}
+
+if (($# == 0)); then
+  print_status
+  exit 0
+fi
+
+if (($# > 1)); then
+  usage
+  exit 1
+fi
+
+case "$1" in
+  random)
+    apply "$(random_mac)" "random"
+    ;;
+  permanent)
+    apply "permanent" "hardware"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
