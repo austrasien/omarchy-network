@@ -121,6 +121,9 @@ Panel {
   property bool wifiStationAvailable: false
   property string dnsProvider: ""
   property string pendingDnsProvider: ""
+  // Brief "Flushed" acknowledgement on the cache button; idle otherwise.
+  property bool dnsFlushBusy: false
+  property bool dnsFlushDone: false
   // Wi-Fi band state from `omarchy-network-band`. `bandCurrent` is the band
   // the radio is actually on; `bandSelected` is the pinned choice ("auto" when
   // nothing is pinned), and the two differ whenever Auto is in effect.
@@ -867,6 +870,17 @@ Panel {
     root.close()
   }
 
+  // Drops answers systemd-resolved is holding so the next lookup hits the
+  // configured provider fresh. Panel stays open: unlike a DNS provider change
+  // there is nothing to reconnect for, and the acknowledgement lives on the
+  // button itself.
+  function flushDnsCache() {
+    if (dnsFlushProc.running || root.dnsFlushBusy) return
+    root.dnsFlushDone = false
+    root.dnsFlushBusy = true
+    dnsFlushProc.running = true
+  }
+
   function requiresCredentials(security) {
     return Model.requiresCredentials(security, WifiSecurityType.Open, WifiSecurityType.Owe)
   }
@@ -1112,6 +1126,26 @@ Panel {
         root.refresh()
       }
     }
+  }
+
+  // Own Process so a flush never collides with a pending band / MAC / DNS
+  // provider change on actionProc. argv form, no shell.
+  Process {
+    id: dnsFlushProc
+    command: ["resolvectl", "flush-caches"]
+    onExited: function(exitCode) {
+      root.dnsFlushBusy = false
+      if (exitCode === 0) {
+        root.dnsFlushDone = true
+        dnsFlushAck.restart()
+      }
+    }
+  }
+
+  Timer {
+    id: dnsFlushAck
+    interval: 1500
+    onTriggered: root.dnsFlushDone = false
   }
 
   // Poll details while the panel is open so the IP/route header catches up
@@ -1709,10 +1743,40 @@ Panel {
         width: parent.width
         spacing: Style.space(10)
 
-        PanelSectionHeader {
-          text: "DNS PROVIDER"
-          foreground: root.bar.foreground
-          fontFamily: root.bar.fontFamily
+        // Header + flush share a row the same way WI-FI NETWORKS + Rescan do:
+        // the action is about DNS, not about choosing a provider, so it sits
+        // with the title rather than below the pills.
+        Item {
+          width: parent.width
+          implicitHeight: Math.max(dnsHeader.implicitHeight, dnsFlushAction.implicitHeight)
+
+          PanelSectionHeader {
+            id: dnsHeader
+            text: "DNS PROVIDER"
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            anchors.left: parent.left
+            anchors.right: dnsFlushAction.left
+            anchors.rightMargin: Style.space(8)
+            anchors.verticalCenter: parent.verticalCenter
+          }
+
+          Button {
+            id: dnsFlushAction
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.dnsFlushBusy ? "…" : (root.dnsFlushDone ? "Flushed" : "Flush cache")
+            tooltipText: "Drop locally cached DNS answers (resolvectl flush-caches)"
+            enabled: !root.dnsFlushBusy
+            selected: root.dnsFlushDone
+            fontSize: Style.font.bodySmall
+            foreground: root.bar.foreground
+            fontFamily: root.bar.fontFamily
+            horizontalPadding: Style.spacing.controlPaddingX
+            verticalPadding: Style.spacing.controlPaddingY
+            bordered: true
+            onClicked: root.flushDnsCache()
+          }
         }
 
         Row {

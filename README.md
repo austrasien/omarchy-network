@@ -32,7 +32,7 @@ This plugin keeps that hero UI and adds the three things you actually want when 
 
 - **History** — 20 minutes of download, upload, ping and packet loss on one graph, sampled at a fixed 10 s cadence whether the panel is open or closed.
 - **Provenance** — the interface MAC, checked against the adapter’s burned-in address, and one click to associate with a random one.
-- **Control** — pin 2.4 / 5 GHz even when the AP does not advertise both, point DNS at NextDNS, rescan on demand.
+- **Control** — pin 2.4 / 5 GHz even when the AP does not advertise both, point DNS at NextDNS, flush the local resolver cache, rescan on demand.
 
 **Why bother?**
 
@@ -45,7 +45,7 @@ This plugin keeps that hero UI and adds the three things you actually want when 
 | **Max values** | — | `max( ↓ 42 MB/s  ↑ 3 MB/s  ● 240 ms )` in the legend |
 | **Wi-Fi band** | Pills only when the AP advertises both, plus an `AUTOMATIC` switch | One row, always there: `2.4 GHz / Auto (5ghz) / 5 GHz` |
 | **MAC** | — | Shown, and obfuscated on demand — click again to restore |
-| **DNS** | DHCP / Cloudflare / **Google** / Custom | DHCP / Cloudflare / **NextDNS** / Custom |
+| **DNS** | DHCP / Cloudflare / **Google** / Custom | DHCP / Cloudflare / **NextDNS** / Custom + **Flush cache** |
 | **Scanned networks** | SSID + signal icon | `known · 5 GHz · -48 dBm · ch 44` per row |
 | **Rescan** | Whenever the panel felt like it | Button + `R` |
 | **Stale NetworkManager** | `NOT CONNECTED` while you are online | Default route settles the argument |
@@ -85,6 +85,10 @@ This plugin keeps that hero UI and adds the three things you actually want when 
 - Everything the system does afterwards — DHCP, DNS, the AP’s ARP table — uses the address on the interface, so the obfuscation is real and not cosmetic.
 - Only the **active** profile is ever obfuscated: any MAC change also sweeps every other saved Wi-Fi profile back to hardware, so a random address cannot lie in wait on a network you rejoin next week.
 - Safe by construction: `flock` against concurrent changes, `nmcli --wait 30` instead of the 90 s default, and an automatic revert-and-reconnect if the radio cannot come back with the new address.
+
+### 🌐 DNS providers + flush cache
+- Pills are **DHCP / Cloudflare / NextDNS / Custom** (NextDNS in place of Google).
+- **Flush cache** sits on the same row as the `DNS PROVIDER` title — `resolvectl flush-caches`, with a brief “Flushed” acknowledgement. The panel stays open; nothing reconnects.
 
 ### 📡 Detail for every network in range
 - Each scanned row reads `status · band · signal · channel` — e.g. `known · 5 GHz · -48 dBm · ch 44`.
@@ -131,6 +135,7 @@ omarchy plugin remove austraz.network
 - NetworkManager (`nmcli`) — band pins, MAC, connect / disconnect
 - `ethtool` — reads the permanent hardware MAC (`pacman -S ethtool`); without it the MAC row hides rather than guesses
 - Stock Omarchy helpers already on your box: `omarchy-network-status`, `omarchy-network-band`, `omarchy-network-qr`, `omarchy-network-speedtest`, `omarchy-network-password`, `omarchy-dns`
+- `systemd-resolved` (`resolvectl`) — Flush cache button; without it the button still runs and reports failure rather than guessing another resolver
 - Optional: `omarchy-nextdns` on `PATH` for the NextDNS pill
 
 No sudo for the plugin itself — `nmcli` handles privileges through polkit, as it does on the command line.
@@ -144,6 +149,7 @@ There is nothing to configure in `shell.json`: every control is in the panel, an
 | Band pill | `802-11-wireless.band` on the active profile (via `omarchy-network-band`) | reboot |
 | Randomise / Restore | `802-11-wireless.cloned-mac-address` on the active profile | reboot |
 | DNS pill | `omarchy-dns <provider>`, or `omarchy-nextdns` for NextDNS | reboot |
+| Flush cache | `resolvectl flush-caches` | nothing — cache only |
 | Legend toggles, panel state | in-memory only | nothing — reset by `omarchy restart shell` |
 | Graph history | in-memory only | nothing |
 
