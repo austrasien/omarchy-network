@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "austraz.network",
   "name": "Network",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "author": "austraz",
   "description": "Wi-Fi panel: band pinning, MAC obfuscation, and a 20-minute traffic / ping / loss graph",
   "kinds": [

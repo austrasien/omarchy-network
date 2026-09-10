@@ -87,8 +87,8 @@ Panel {
   readonly property color chartDownload: "#ff2ec4"
   readonly property color chartUpload: "#5aa8ff"
   // Deliberately outside the other three hues: fuchsia, blue and the ping heat
-  // ramp are all taken, so loss reads as pale dots rather than a fourth line
-  // competing with them.
+  // ramp are all taken, so loss is a pale continuous line rather than a fourth
+  // colour competing with them.
   readonly property string chartLoss: "#cdd6f4"
   readonly property real pingPeakMs: pingScale.peak
   readonly property color chartPing: pingPeakMs > 0 ? Model.pingHeatColor(pingPeakMs) : "#888888"
@@ -1611,11 +1611,10 @@ Panel {
               }
             }
             // No "max": a loss axis is fixed at 0-100% and its peak says less
-            // than the dots do. U+2715 rather than a plain "x" -- it is
-            // geometric like the dot above it, and survives 10px where the
-            // multiplication sign smears.
+            // than the curve does. Same ● as ping so the legend reads as four
+            // continuous series; the pale colour is what tells them apart.
             LegendToggle {
-              text: "✕ loss"
+              text: "● loss"
               color: root.chartLoss
               shown: root.showLoss
               series: "packet loss"

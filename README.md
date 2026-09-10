@@ -38,7 +38,7 @@ This plugin keeps that hero UI and adds the three things you actually want when 
 
 | | Stock `omarchy.network` ❌ | This plugin ✅ |
 | :--- | :--- | :--- |
-| **History** | Instant numbers only | 20-min graph: ↓ ↑ ping ✕loss, 10 s cadence |
+| **History** | Instant numbers only | 20-min graph: ↓ ↑ ping ●loss, 10 s cadence |
 | **Peaks** | — | 5 highest spikes labelled in place, de-duplicated |
 | **Hide a series** | — | Click the legend; axis and peak labels recompute |
 | **Ping** | Plain text | Heat-coloured green → yellow → orange, text and curve |
@@ -57,16 +57,16 @@ This plugin keeps that hero UI and adds the three things you actually want when 
 ### 🌡 Ping coloured by performance
 - Both the **live value** in the detail grid and the **curve** in the graph are coloured by latency, per point: green under 50 ms, yellow under 120 ms, orange above.
 - The colour is a property of the *value*, not of the moment: a 400 ms spike stays orange as it scrolls left, and the `max(● …)` legend entry is coloured by the **peak**, not by the ping happening right now.
-- Packet loss keeps its own row, and its own ✕ dots in the graph on a fixed 0–100 % axis.
+- Packet loss keeps its own row, and its own continuous curve on a fixed 0–100 % axis.
 
 ### 📈 20-minute graph, with the peaks named
-- Four series: **download** (fuchsia, filled), **upload** (blue), **ping** (heat-coloured), **packet loss** (✕ dots).
+- Four series: **download** (fuchsia, filled), **upload** (blue), **ping** (heat-coloured), **packet loss** (pale continuous line).
 - **Fixed 10 s cadence, panel open or closed.** The shape of the graph does not depend on whether you were looking at it — open the panel after twenty minutes away and the twenty minutes are there.
 - 120 points over 20 minutes; download and upload share one rate axis so the two are directly comparable, ping and loss get their own.
 - The **5 visually highest peaks** are labelled in place, above the spike they belong to, with de-duplication so two labels never name the same event.
 
 ### 🎛 Legend as switches
-- Click **↓ / ↑ / ● / ✕ loss** to hide a series, click again to bring it back. Hidden entries dim rather than disappear, so the way back is where the way out was.
+- Click **↓ / ↑ / ● ping / ● loss** to hide a series, click again to bring it back. Hidden entries dim rather than disappear, so the way back is where the way out was.
 - Hiding rescales what is left: drop a 40 MB/s download and the upload curve stops being a flat line at the bottom of the plot.
 - Peak labels are recomputed from the **visible** series only, so the five callouts are always the five you can actually see.
 - Maxima are factorised like a function call — `max( ↓ ↑ ● )` — because the word three times did not fit, and loss sits outside it: a 0–100 % axis has no maximum worth reading.

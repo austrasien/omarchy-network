@@ -221,38 +221,44 @@ Canvas {
     flush()
   }
 
-  // Dots, not a dashed polyline: this Canvas ignores setLineDash, and stepping
-  // the dashes by hand is what froze the shell once already. Discrete points
-  // read as the dotted series that was asked for and cost one path, one fill.
-  //
-  // Loss is on a fixed 0-100% axis rather than scaled to its own maximum: a 2%
-  // blip auto-scaled to full height would look like an outage. Samples at 0%
-  // are skipped entirely, so a healthy link leaves the chart clean instead of
-  // laying a row of dots along the baseline.
-  function drawLossDots(ctx) {
+  // Same polyline as download / upload: one path, one stroke. Loss stays on a
+  // fixed 0-100% axis rather than scaling to its own maximum — a 2% blip
+  // auto-scaled to full height would look like an outage. Zero samples are
+  // drawn (baseline), so a healthy stretch is a flat line rather than a gap.
+  function drawLossSeries(ctx) {
     var list = pingPoints
-    if (!list || list.length === 0) return
+    if (!list || list.length < 2) return
     var span = t1 - t0
     if (!(span > 1) || !(width > 0) || !(height > 0)) return
 
-    var r = 1.6
-    var drew = false
     ctx.beginPath()
+    var started = false
     for (var i = 0; i < list.length; i++) {
       var p = list[i]
       if (!p) continue
       var value = p.loss
-      if (typeof value !== "number" || !isFinite(value) || value <= 0) continue
+      if (typeof value !== "number" || !isFinite(value) || value < 0) {
+        started = false
+        continue
+      }
       var x = mapX(p.t, span)
       var y = mapY(value, 100)
-      if (!isFinite(x) || !isFinite(y)) continue
-      ctx.moveTo(x + r, y)
-      ctx.arc(x, y, r, 0, Math.PI * 2)
-      drew = true
+      if (!isFinite(x) || !isFinite(y)) {
+        started = false
+        continue
+      }
+      if (!started) {
+        ctx.moveTo(x, y)
+        started = true
+      } else {
+        ctx.lineTo(x, y)
+      }
     }
-    if (!drew) return
-    ctx.fillStyle = lossColor
-    ctx.fill()
+    ctx.strokeStyle = lossColor
+    ctx.lineWidth = lineWidth
+    ctx.lineJoin = "round"
+    ctx.lineCap = "round"
+    ctx.stroke()
   }
 
   function formatRate(bps) {
@@ -366,7 +372,7 @@ Canvas {
     }
     if (showUp) drawSeries(ctx, "up", upMax, upColor)
     if (showPing) drawPingHeat(ctx)
-    if (showLoss) drawLossDots(ctx)
+    if (showLoss) drawLossSeries(ctx)
   }
 
   Repeater {
